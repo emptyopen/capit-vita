@@ -1,0 +1,1 @@
+['SC', 'BCC', 'FCT', 'GNT', 'KORE', 'IOP', 'LMC', 'ADX', 'ETC', 'DCR', 'CVC', 'RDD', 'ZEC', 'NEO', 'XEL', 'EBST', 'BAT', 'BTS', 'MTL', 'XRP', 'MCO', 'TRIG', 'PAY', 'XMR', 'NAV', 'LTC'], 
