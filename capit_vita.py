@@ -164,7 +164,7 @@ class CapitVita(object):
         ff.close()
 
         # send email
-        if len(self.mailing_list) > 0:
+        if len(self.mailing_list) > 0 and False:
             self.send_email(self.file_path, self.title+' Top '+str(self.num_stocks)+' Prospects', self.mailing_list)
 
         return sortedStocks
