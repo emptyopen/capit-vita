@@ -33,10 +33,15 @@ from email.mime.text import MIMEText
 from email.utils import COMMASPACE, formatdate
 
 
-### To-do
 '''
 TO DO
 
+auto sell architecture
+filter out already bought options
+show 3 months empty ahead of time
+show points in plot
+improve MACD plot? revamp point system and technical indicators
+https://www.investopedia.com/articles/active-trading/011815/top-technical-indicators-rookie-traders.asp
 '''
 
 
