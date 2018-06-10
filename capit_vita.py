@@ -37,13 +37,13 @@ from email.utils import COMMASPACE, formatdate
 TO DO
 
 update stocklist
-email alphavantage key
-auto sell architecture
+email alphavantage key so mac can use
 filter out already bought options
 show 3 months empty ahead of time
 show points in plot
 improve MACD plot? revamp point system and technical indicators
 https://www.investopedia.com/articles/active-trading/011815/top-technical-indicators-rookie-traders.asp
+auto sell architecture
 '''
 
 
