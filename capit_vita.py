@@ -89,10 +89,6 @@ class CapitVita(object):
         filelist = glob.glob('*.png')
         for f in filelist:
             os.remove(f)
-        os.chdir(self.home_path+'temp/')
-        filelist = glob.glob("*.csv")
-        for f in filelist:
-            os.remove(f)
         if self.alt_file_path != None:
             os.chdir(self.alt_file_path)
             filelist = glob.glob('*.png')
