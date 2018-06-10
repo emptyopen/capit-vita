@@ -36,6 +36,8 @@ from email.utils import COMMASPACE, formatdate
 '''
 TO DO
 
+update stocklist
+email alphavantage key
 auto sell architecture
 filter out already bought options
 show 3 months empty ahead of time
@@ -46,8 +48,6 @@ https://www.investopedia.com/articles/active-trading/011815/top-technical-indica
 
 
 class CapitVita(object):
-
-    # handles batches of stocks
 
     def __init__(self, title = '', num_stocks = 15, mailing_list = [], debug = False):
 
@@ -76,17 +76,15 @@ class CapitVita(object):
 ###########################################################################################################################################################
 
     def find_stocks(self, graph = False):
-        # start counting duration of script
+
         start_time = time.time()
 
         print('Initiating log...')
-        # create log
         ff = open(self.file_path+'readme.txt','w')
         ff.write(str(dt.datetime.now()))
         ff.write('\n')
 
         print('Deleting old files...')
-        # delete old files
         os.chdir(self.file_path)
         filelist = glob.glob('*.png')
         for f in filelist:
@@ -115,11 +113,8 @@ class CapitVita(object):
             stockset = stockset[:10]
         lenStockset = len(stockset)
 
-        # grab data in batches
         print('Grabbing data for {} stocks...'.format(lenStockset))
-
         stockPoints = {}
-
         for stock in stockset:
             try:
                 points = self.get_points(stock)
@@ -132,9 +127,7 @@ class CapitVita(object):
 
 
         print('Sorting stocks...')
-        # sort stocks by point system
         sortedStocks = sorted(stockPoints.items(), key=itemgetter(1), reverse = True)[:self.num_stocks]
-
         if graph:
             print('Graphing stocks...')
             for stock in [x[0] for x in sortedStocks]:
@@ -144,29 +137,22 @@ class CapitVita(object):
                 except Exception as e:
                     print('failed {} because {}'.format(stock, e))
 
-        # write into log
+        print('Logging results...')
         ff.write('Cheap stocks to invest in for 2 days ~ 1 week: \n\n')
-
         ff.write('#\n')
         for i in sortedStocks:
             ff.write(i[0]+': '+str(round(i[1][0],1))+'  '+str(i[1][1])+'\n')
         ff.write('#\n')
-
-        ff.write('\n\n  '+str(lenOriginalStocks)+' stocks shortened by point system to '+str(len(sortedStocks))+' stocks')
-
+        ff.write('\n\n  '+str(lenOriginalStocks)+' stocks filtered by point system to '+str(len(sortedStocks))+' stocks')
         ff.write("\n\n--- %s seconds ---" % (time.time() - start_time))
-
-        ff.write('\n\n\n  Capit-Vita Version 4.2  (2017-08-29)\n\n')
-        ff.write('  - Improved CapitVita, moving towards all DataFrames\n')
-        ff.write('  - Changed plot style a bit\n')
-        ff.write('  - To-do: make screening process triple distilled (technical, add fundamental, then DL/techincal)\n')
-        ff.write('    - DL: classifier on a scale of 1~5 with PCA?\n')
+        ff.write('\n\n\n  Capit-Vita Version 4.4  (2018-06-10)\n\n')
         ff.close()
 
-        # send email
+        print('Sending emails...')
         if len(self.mailing_list) > 0 and False:
             self.send_email(self.file_path, self.title+' Top '+str(self.num_stocks)+' Prospects', self.mailing_list)
 
+        print('Done!')
         return sortedStocks
 
 ###########################################################################################################################################################
@@ -177,10 +163,8 @@ class CapitVita(object):
     def grab_data(self, signal_name):
 
         try:
-            #one_year_ago = (dt.datetime.now() - datetime.timedelta(days=365)).strftime('%Y-%m-%d')
-            #self.df = quandl.get('WIKI/'+signal_name, start_date = one_year_ago)[['Adj. Open','Adj. High','Adj. Low','Adj. Close','Adj. Volume']]
 
-            with open(self.par_path + '/auth/alphaadvantage.txt') as f:
+            with open(self.par_path + '/auth/alphavantage.txt') as f:
             	myAPI = f.read().split('\n')[0]
             tries = 0
             while True:
@@ -192,13 +176,9 @@ class CapitVita(object):
                 else:
                     time.sleep(1)
                     tries += 1
-                if tries > 50:
+                if tries > 50: # in case we're trying too many calls?
                     break
-                # in case we're getting too many calls?
-                '''
-                if 'Information' in temp or 'Error Message' in temp:
-                    print(signal_name, temp)
-                '''
+
             self.df = pd.DataFrame.from_dict(temp['Time Series (Daily)']).transpose()
             self.df = self.df.iloc[-100:]
             self.df.columns = ['open', 'high', 'low', 'close', 'adjusted close', 'volume', 'dividend amount', 'split coefficient']
@@ -215,7 +195,7 @@ class CapitVita(object):
 
         except BufferError:
         #except Exception as e:
-            print('failed because {}'.format(e))
+            print('failed to get data because {}'.format(e))
 
 
     def sanitize_data(self):
@@ -607,7 +587,6 @@ class CapitVita(object):
         return np.convolve(values, weights, 'valid')
 
     def expMovingAverage(self, values,window):
-        # puts more weight behind recent data
         weights = np.exp(np.linspace(-1.,0.,window))
         weights /= weights.sum()
         a = np.convolve(values,weights,mode='full')[:len(values)]
@@ -630,7 +609,6 @@ class CapitVita(object):
         return np.gradient(signal)
 
     def bbands(self, price, length=30, numsd=2):
-        """ returns average, upper band, and lower band"""
         ave = price.rolling(window=length, center=False).mean()
         sd = price.rolling(window=length, center=False).std()
         upband = ave + (sd*numsd)
@@ -771,8 +749,7 @@ class CapitVita(object):
         server.quit()
 
 
-'''
+
 stock = 'cgnx'
 C = CapitVita()
 C.graph_data(stock)
-'''
