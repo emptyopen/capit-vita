@@ -37,11 +37,10 @@ from email.utils import COMMASPACE, formatdate
 TO DO
 
 update stocklist
-email alphavantage key so mac can use
 filter out already bought options
-show 3 months empty ahead of time
 show points in plot
 improve MACD plot? revamp point system and technical indicators
+look-back 3 years to see accuracy of RSI?
 https://www.investopedia.com/articles/active-trading/011815/top-technical-indicators-rookie-traders.asp
 auto sell architecture
 '''
@@ -54,19 +53,16 @@ class CapitVita(object):
         self.title = title
         self.num_stocks = num_stocks
         self.home_path = os.path.abspath(os.getcwd())
-        print(self.home_path, '/home/ec2-user', self.home_path == '/home/ec2-user')
         if 'ec2-user' in self.home_path:
             self.home_path = '/home/ec2-user/capit-vita'
         self.file_path = self.home_path+'/data/'
         self.par_path = os.path.dirname(self.home_path) + '/'
         self.home_path = self.home_path + '/'
         if os.path.exists(self.par_path + '/takaomattcom/static/img/stocks/'):
-            print('path exists')
             self.alt_file_path = self.par_path + '/takaomattcom/static/img/stocks/'
         else:
-            print('path does not exist')
             self.alt_file_path = None
-        print('capit', self.home_path, self.file_path, self.par_path, self.alt_file_path)
+        #print('capit', self.home_path, self.file_path, self.par_path, self.alt_file_path)
         self.mailing_list = mailing_list
         self.debug = debug
         self.batchSize = 50
@@ -118,9 +114,7 @@ class CapitVita(object):
             #except BufferError:
             except Exception as e:
                 print('failed {} because {}'.format(stock, e))
-
         lenOriginalStocks = len(stockPoints)
-
 
         print('Sorting stocks...')
         sortedStocks = sorted(stockPoints.items(), key=itemgetter(1), reverse = True)[:self.num_stocks]
@@ -156,7 +150,7 @@ class CapitVita(object):
 ###########################################################################################################################################################
 
 
-    def grab_data(self, signal_name):
+    def grab_data(self, signal_name, rng=140):
 
         try:
 
@@ -176,13 +170,14 @@ class CapitVita(object):
                     break
 
             self.df = pd.DataFrame.from_dict(temp['Time Series (Daily)']).transpose()
-            self.df = self.df.iloc[-100:]
+            self.df = self.df.iloc[-rng:]
             self.df.columns = ['open', 'high', 'low', 'close', 'adjusted close', 'volume', 'dividend amount', 'split coefficient']
             self.df[['open','high','low','close','volume']] = self.df[['open','high','low','close','volume']].apply(pd.to_numeric)
             self.df['rsi'] = self.RSI(self.df['close'], 14)
             self.df['26 ema'] = self.df['close'].ewm(ignore_na=False,min_periods=0,adjust=True,com=26).mean()
             self.df['12 ema'] = self.df['close'].ewm(ignore_na=False,min_periods=0,adjust=True,com=12).mean()
             self.df['MACD'] = self.df['12 ema'] - self.df['26 ema']
+            self.df['MACD trigger'] = self.df['MACD'].ewm(ignore_na=False,min_periods=0,adjust=True,com=9).mean()
             self.df['MACD signal'] = self.df['MACD'] - self.df['MACD'].ewm(ignore_na=False,min_periods=0,adjust=True,com=9).mean()
             self.df['MACD_norm'] = self.normalize(self.df['MACD signal'])
             self.df['MACD_der'] = self.derivative(self.df['MACD_norm'])
@@ -229,7 +224,7 @@ class CapitVita(object):
 ###      Points
 ###########################################################################################################################################################
 
-    def get_points(self, signal_name, criteria = {}, rng = '1y'):
+    def get_points(self, signal_name, criteria = {}):
 
         try:
 
@@ -239,32 +234,39 @@ class CapitVita(object):
 
             mb, tb, bb, = self.bbands(self.df['close'])
             if self.df['close'].iloc[-1] < (mb.iloc[-1] + bb.iloc[-1]) / 2:
-                points['admin'] = -500
+                points['outside BB'] = -500
 
             if len(self.df['close']) < 100:
-                points['admin'] = -500
+                points['too short'] = -500
 
             # RSI points (max 50)
             points['rsi'] = 50 - round(1.2 * abs(30-self.df['rsi'].iloc[-1]))
 
-            # MACD points (max 50)
-            points['macd1'] = round(15 * self.df['MACD_norm'].iloc[-1] / max([abs(x) for x in self.df['MACD_norm']]))
-            points['macd2'] = round(15 * self.df['MACD_der'].iloc[-1] / max([abs(x) for x in self.df['MACD_der']]))
+            # MACD points (max 40)
+            macd_max = max(self.df['MACD'])
+            macd_min = min(self.df['MACD'])
+            macd_diff = macd_max - macd_min
+            #print('max, min', macd_max, macd_min, macd_diff, self.df['MACD'].iloc[-1])
+            #print('percentage', abs(self.df['MACD'].iloc[-1] / macd_diff))
+            points['macd'] = 40 * (1. - abs(self.df['MACD'].iloc[-1] / macd_diff))
+            #points['macd'] = round(30 * self.df['MACD_norm'].iloc[-1] / max([abs(x) for x in self.df['MACD_norm']]))
+            #points['macd2'] = round(15 * self.df['MACD_der'].iloc[-1] / max([abs(x) for x in self.df['MACD_der']]))
 
+            '''
             # candlestick points (max 10)
             #if style == 'option':
             candlestickFactor = 0
-
             patterns = self.detectCandlestickPatterns(self.df['open'][-7:],
                                 self.df['close'][-7:], self.df['low'][-7:],
                                 self.df['high'][-7:], candlestickFactor)
             points['candlesticks'] = self.rangeLimit(round(sum([x[2] for x in patterns])), -20, 20)
+            '''
 
-            # guru points (max 80)
+            # guru points (max 50)
             try:
                 guru = self.get_guru(signal_name)
-                points['guru_financial'] = 3.5*int(guru[0])
-                points['guru_growth'] = 3.5*int(guru[1])
+                points['guru_financial'] = 2.5*int(guru[0])
+                points['guru_growth'] = 2.5*int(guru[1])
             except IndexError:
                 print('failed Guru for {}'.format(signal_name))
                 points['guru_financial'] = 15
@@ -339,15 +341,15 @@ class CapitVita(object):
 ###      Graphing
 ###########################################################################################################################################################
 
-    def graph_data(self, signal_name, rng = 150, saveLocation = ''):
-                            # sdq = side, date, quantity
+    def graph_data(self, signal_name, rng = 100, saveLocation = ''):
+
         try:
 
             # create signals
-            self.grab_data(signal_name)
+            #self.grab_data(signal_name, rng)
+            points = self.get_points(signal_name) # this grabs the data as well
 
             # grab data
-            #self.df = self.df.iloc[-rng:]
             if 'time' in self.df:  ## from crypto
                 date = self.df['date']
                 volume = self.df['volumeto']
@@ -361,197 +363,171 @@ class CapitVita(object):
             lowp = self.df['low']
             date = date.apply(lambda x: mdates.date2num(dt.datetime.strptime(x, '%Y-%m-%d')))
 
-            #ns = 1e-9
-            #date = [dt.datetime.utcfromtimestamp(x.astype(int)*ns) for x in date]
-            #date = mdates.date2num(date)
+            mb, tb, bb, = self.bbands(closep)
+
+            datemin = date.min() + 30
+            datemax = date.max() + 45
 
             # make colors
-            goodColor = '#53C156'
-            badColor = '#ff1717'
-            spineColor = '#5998ff'
+            good_color = '#53C156'
+            bad_color = '#ff1717'
+            blue_color = '#3fcaff'
+            spine_color = '#808080'
+            label_color = 'k'
 
-            rowNum = 10
+            rowNum = 20
             colNum = 4
 
             # identify fig
-            #fig = plt.figure(facecolor='w',figsize=(18.,11.))
             plt.figure(facecolor='w',figsize=(18.,11.))
-            plt.suptitle(signal_name,color=spineColor, size='xx-large')
-            plt.subplots_adjust(left=.09,bottom=.04,right=.94,top=.95,wspace=.2,hspace=0)
+            plt.suptitle(signal_name,color=label_color, size='xx-large')
+            plt.subplots_adjust(left=.125,bottom=.01,right=.9,top=.92,wspace=.2,hspace=0.1)
 
-            # initialize params
-            bbtf = 20
-
-            # plot 0 ---------------------------------------------------------------------------------------
-            ax0 = plt.subplot2grid((rowNum,colNum),(0,0),rowspan=1,colspan=4,facecolor='w')
-            plt.ylabel('RSI',color='k')
-            ax0.yaxis.label.set_color(spineColor)
-            ax0.spines['bottom'].set_color(spineColor)
-            ax0.spines['top'].set_color(spineColor)
-            ax0.spines['left'].set_color(spineColor)
-            ax0.spines['right'].set_color(spineColor)
-            ax0.tick_params(axis='y',colors=spineColor)
-            ax0.set_yticks([30,70])
-            ax0.axhline(70,color = badColor)
-            ax0.axhline(30,color = goodColor)
-            plt.setp(ax0.get_xticklabels(),visible=False)
+            # plot rsi ---------------------------------------------------------------------------------------
+            ax_rsi = plt.subplot2grid((rowNum,colNum),(0,0),rowspan=3,colspan=4)
+            plt.ylabel('RSI',color=label_color)
+            ax_rsi.yaxis.tick_right()
+            ax_rsi.grid(True,color=spine_color)
+            ax_rsi.yaxis.label.set_color(spine_color)
+            ax_rsi.spines['bottom'].set_color(spine_color)
+            ax_rsi.spines['top'].set_color(spine_color)
+            ax_rsi.spines['left'].set_color(spine_color)
+            ax_rsi.spines['right'].set_color(spine_color)
+            ax_rsi.tick_params(axis='y',colors=spine_color)
+            ax_rsi.set_yticks([30,70])
+            ax_rsi.axhline(70,color = bad_color)
+            ax_rsi.axhline(30,color = good_color)
+            plt.setp(ax_rsi.get_xticklabels(),visible=False)
 
             # plot RSI
-            ax0.plot(date, self.df['rsi'], color='k')
+            ax_rsi.plot(date, self.df['rsi'], color='k', linewidth=2, alpha=0.5)
             pylab.ylim([0,100])
 
-            # plot 0v ---------------------------------------------------------------------------------------
-            ax0v = ax0.twinx()
-            ax0v.grid(False)
-            ax0v.axes.yaxis.set_ticklabels([])
-            ax0v.yaxis.label.set_color(spineColor)
-            ax0v.spines['bottom'].set_color(spineColor)
-            ax0v.spines['top'].set_color(spineColor)
-            ax0v.spines['left'].set_color(spineColor)
-            ax0v.spines['right'].set_color(spineColor)
-            ax0v.tick_params(axis='y',colors=spineColor)
-            #plt.setp(ax0v.get_xticklabels(),visible=False)
 
-            # plot 1 ---------------------------------------------------------------------------------------
-            ax1 = plt.subplot2grid((rowNum,colNum),(1,0),rowspan=5,colspan=4,facecolor='w',sharex=ax0)
-
-            plt.ylabel('Price and Volume',color=spineColor)
-            ax1.grid(True,color=spineColor)
-            #ax1.xaxis.set_major_locator(mticker.MaxNLocator(10))
-            #ax1.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-            ax1.yaxis.label.set_color(spineColor)
-            ax1.spines['bottom'].set_color(spineColor)
-            ax1.spines['top'].set_color(spineColor)
-            ax1.spines['left'].set_color(spineColor)
-            ax1.spines['right'].set_color(spineColor)
-            ax1.tick_params(axis='y',colors=spineColor)
-            plt.setp(ax1.get_xticklabels(),visible=False)
-            plt.gca().yaxis.set_major_locator(mticker.MaxNLocator(prune='upper')) #prune
-            ax1.xaxis.set_major_locator(mticker.MaxNLocator(nbins=20))
-
+            # main plot ---------------------------------------------------------------------------------------
+            ax_main = plt.subplot2grid((rowNum,colNum),(3,0),rowspan=8,colspan=4,sharex=ax_rsi)
+            plt.ylabel('Price and Volume',color=label_color)
+            ax_main.grid(True,color=spine_color, which='major')
+            ax_main.grid(True,color=spine_color, which='minor', alpha=0.7)
+            ax_main.xaxis.set_major_locator(mticker.MaxNLocator(10))
+            ax_main.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+            ax_main.yaxis.label.set_color(spine_color)
+            ax_main.spines['bottom'].set_color(spine_color)
+            ax_main.spines['top'].set_color(spine_color)
+            ax_main.spines['left'].set_color(spine_color)
+            ax_main.spines['right'].set_color(spine_color)
+            ax_main.tick_params(axis='y',colors=spine_color)
+            ax_main.yaxis.set_major_locator(mticker.MaxNLocator(prune='both'))
+            plt.setp(ax_main.get_xticklabels(),visible=False)
 
             # plot Bollinger bands
-            mb, tb, bb, = self.bbands(closep)
-            ax1.plot(date,tb,'#adbdd6',alpha=0.7,label='TB')
-            ax1.plot(date,bb,'#adbdd6',alpha=0.7,label='BB')
-            ax1.plot(date,mb,'#ba970d',alpha=0.7,label='MA'+str(bbtf))
-
+            ax_main.plot(date,tb,'#adbdd6',alpha=0.9,label='TB')
+            ax_main.plot(date,bb,'#adbdd6',alpha=0.9,label='BB')
+            ax_main.plot(date,mb,'#ba970d',alpha=0.7,label='MA')
 
             # min max stuff
             min1, min2 = self.finalMinIndex(lowp)
-            max1, max2 = self.finalMaxIndex(highp)
-            d1 = int((min1+max1)/2)
-            d2 = int((min2+max2)/2)
-            ax1.plot([date[d1],date[d2]],[closep[d1],closep[d2]],linewidth=7,color='#4ee6fd',alpha=0.8,linestyle=':')
-
+            max_main, max_macd = self.finalMaxIndex(highp)
+            d1 = int((min1+max_main)/2)
+            d2 = int((min2+max_macd)/2)
+            ax_main.plot([date[d1],date[d2]],[closep[d1],closep[d2]],linewidth=8,color=blue_color,alpha=0.8,linestyle=':')
 
             # plot candlestick
             candleAr = [[date[x],openp[x],closep[x],highp[x],lowp[x]] for x in range(len(date))]
-            self.candlestick(ax1, candleAr, width = 0.5, colorup = goodColor, colordown = badColor)
+            self.candlestick(ax_main, candleAr, width = 0.5, colorup = good_color, colordown = bad_color)
+            #ax_main.yaxis.tick_right()
+            ax_main.yaxis.set_ticks_position('both')
 
-
-            # plot 1v ---------------------------------------------------------------------------------------
-            ax1v = ax1.twinx()
-            ax1v.grid(False)
-            ax1v.axes.yaxis.set_ticklabels([])
-            ax1v.spines['bottom'].set_color(spineColor)
-            ax1v.spines['top'].set_color(spineColor)
-            ax1v.spines['left'].set_color(spineColor)
-            ax1v.spines['right'].set_color(spineColor)
-            ax1v.yaxis.label.set_color(spineColor)
-            ax1v.xaxis.label.set_color(spineColor)
-            ax1v.set_ylim(0,2*volume.max())
-            ax1v.tick_params(axis='x',colors='w')
-            ax1v.tick_params(axis='y',colors='w')
-
+            ''' commented out because it moves the axis ticks
             # plot volume
-            ax1v.fill_between(date,0,volume,facecolor='#8e8e87',alpha=.1)
+            ax_main_v = ax_main.twinx()
+            ax_main_v.grid(False)
+            ax_main_v.axes.yaxis.set_ticklabels([])
+            ax_main_v.spines['bottom'].set_color(spine_color)
+            ax_main_v.spines['top'].set_color(spine_color)
+            ax_main_v.spines['left'].set_color(spine_color)
+            ax_main_v.spines['right'].set_color(spine_color)
+            ax_main_v.yaxis.label.set_color(spine_color)
+            ax_main_v.xaxis.label.set_color(spine_color)
+            ax_main_v.fill_between(date,0,volume,facecolor='#8e8e87',alpha=.1)
+            '''
 
-            # plot 2 ---------------------------------------------------------------------------------------
-            ax2 = plt.subplot2grid((rowNum,colNum),(6,0),rowspan=1,colspan=4,facecolor='w',sharex=ax0)
-            plt.ylabel('MACD',color=spineColor)
-            ax2.grid(True,color=spineColor)
-            ax2.yaxis.label.set_color(spineColor)
-            ax2.spines['bottom'].set_color(spineColor)
-            ax2.spines['top'].set_color(spineColor)
-            ax2.spines['left'].set_color(spineColor)
-            ax2.spines['right'].set_color(spineColor)
-            ax2.yaxis.set_major_locator(mticker.MaxNLocator(nbins=5,prune='upper'))
-            ax2.tick_params(axis='x',colors=spineColor)
-            ax2.tick_params(axis='y',colors=spineColor)
-            ax2.xaxis.label.set_color(spineColor)
-            xfmt = mdates.DateFormatter('%Y-%m-%d')
-            ax2.xaxis.set_major_formatter(xfmt)
-            for label in ax2.xaxis.get_ticklabels():
+
+            # plot MACD ---------------------------------------------------------------------------------------
+            ax_macd = plt.subplot2grid((rowNum,colNum),(11,0),rowspan=3,colspan=4,sharex=ax_rsi)
+            plt.ylabel('MACD',color=label_color)
+            #ax_macd.yaxis.tick_right()
+            ax_macd.grid(True,color=spine_color, which='both')
+            ax_macd.yaxis.label.set_color(spine_color)
+            ax_macd.spines['bottom'].set_color(spine_color)
+            ax_macd.spines['top'].set_color(spine_color)
+            ax_macd.spines['left'].set_color(spine_color)
+            ax_macd.spines['right'].set_color(spine_color)
+            ax_macd.yaxis.set_major_locator(mticker.MaxNLocator(nbins=5,prune='upper'))
+            ax_macd.tick_params(axis='x',colors=spine_color)
+            ax_macd.tick_params(axis='y',colors=spine_color, labelright=True)
+            ax_macd.axes.yaxis.set_ticklabels([])
+            ax_macd.set_xlim(datemin, datemax)
+            ax_macd.xaxis.set_major_locator(mdates.MonthLocator())
+            ax_macd.xaxis.set_major_formatter(mdates.DateFormatter('%B'))
+            ax_macd.xaxis.set_minor_locator(mdates.WeekdayLocator(mdates.MONDAY))
+
+            for label in ax_macd.xaxis.get_ticklabels():
                 label.set_rotation(45)
+            ax_macd.fill_between(date, self.df['MACD signal'], 0, alpha=0.5, facecolor=blue_color, edgecolor='k')
 
-            ax2.fill_between(date, self.df['MACD_norm'], 0, alpha=0.5, facecolor='#4ee6fd', edgecolor='k')
+            '''
+            ax_macd_der = ax_macd.twinx()
+            ax_macd_der.plot(date, self.df['MACD_der'], color='k', linewidth=1, alpha=0.5)
+            ax_macd_der.spines['bottom'].set_color(spine_color)
+            ax_macd_der.spines['top'].set_color(spine_color)
+            ax_macd_der.spines['left'].set_color(spine_color)
+            ax_macd_der.spines['right'].set_color(spine_color)
+            ax_macd_der.axes.yaxis.set_ticklabels([])
+            #ax_macd.plot(date, self.df['MACD trigger'], color='k', linewidth=1)
+            #ax_macd.fill_between(date, self.df['MACD signal'], 0, alpha=0.5, facecolor='g', edgecolor='k')
+            ax_macd_der.set_xlim(datemin, datemax)
+            '''
 
+            # plot last week ---------------------------------------------------------------------------------------
+            c_length = 7
+            ax_lastweek = plt.subplot2grid((rowNum,colNum),(15,0),rowspan=4,colspan=2)
+            plt.ylabel(str(c_length)+' day candlesticks',color=label_color)
+            ax_lastweek.yaxis.label.set_color(spine_color)
+            ax_lastweek.grid(True, color='k', alpha=0.5)
+            ax_lastweek.spines['bottom'].set_color(spine_color)
+            ax_lastweek.spines['top'].set_color(spine_color)
+            ax_lastweek.spines['left'].set_color(spine_color)
+            ax_lastweek.spines['right'].set_color(spine_color)
+            ax_lastweek.tick_params(axis='y',colors=spine_color)
+            ax_lastweek.tick_params(axis='x',colors=spine_color)
+            ax_lastweek.xaxis.set_major_locator(mdates.DayLocator())
+            ax_lastweek.xaxis.set_major_formatter(mdates.DateFormatter('%a'))
+            ax_lastweek.yaxis.set_major_locator(mticker.MaxNLocator(5, prune='both'))
+            ax_lastweek.set_xlim(date.max() - c_length - 1, date.max() + 1)
+            ax_main.xaxis.set_major_locator(mticker.MaxNLocator(prune='both'))
 
-            MACD_min = abs(round(min(self.df['MACD_norm']), 2))
-            MACD_max = abs(round(max(self.df['MACD_norm']), 2))
-            if MACD_min > MACD_max:
-                lim = MACD_min
-            else:
-                lim = MACD_max
-            ax2.set_ylim(-lim*1.1, lim*1.1)
+            # plot candlesticks
+            candleAr = [[date[x],openp[x],closep[x],highp[x],lowp[x],volume[x]] for x in range(len(date)-c_length,len(date))]
+            self.candlestick(ax_lastweek, candleAr[-c_length:], width=.5, colorup=good_color, colordown=bad_color)
 
-            # plot 2v ---------------------------------------------------------------------------------------
+            ax_lastweek.yaxis.tick_left()
 
-            ax2v = ax2.twinx()
-            ax2v.axes.yaxis.set_ticklabels([])
-            ax2v.spines['bottom'].set_color(spineColor)
-            ax2v.spines['top'].set_color(spineColor)
-            ax2v.spines['left'].set_color(spineColor)
-            ax2v.spines['right'].set_color(spineColor)
-
-            ax2v.fill_between(date, self.df['MACD_der'], 0, alpha=0.5, facecolor='#eaed4d', edgecolor='k')
-
-            MACD_der_min = abs(round(min(self.df['MACD_der']), 2))
-            MACD_der_max = abs(round(max(self.df['MACD_der']), 2))
-            if MACD_der_min > MACD_der_max:
-                lim = MACD_der_min
-            else:
-                lim = MACD_der_max
-            ax2v.set_ylim(-lim*1.1, lim*1.1)
-
-
-            # plot 5 ---------------------------------------------------------------------------------------
-            cLength = 7
-            ax5 = plt.subplot2grid((rowNum,colNum),(8,0),rowspan=2,colspan=2,facecolor='w')
-            plt.ylabel(str(cLength)+' day candlesticks',color=spineColor)
-            ax5.yaxis.label.set_color(spineColor)
-            ax5.grid(True, color='k', alpha=0.5)
-            ax5.spines['bottom'].set_color(spineColor)
-            ax5.spines['top'].set_color(spineColor)
-            ax5.spines['left'].set_color(spineColor)
-            ax5.spines['right'].set_color(spineColor)
-            ax5.tick_params(axis='y',colors=spineColor)
-
-            # plot candlestick
-            candleAr = [[date[x],openp[x],closep[x],highp[x],lowp[x],volume[x]] for x in range(len(date)-cLength,len(date))]
-            self.candlestick(ax5, candleAr[-cLength:], width=.5, colorup=goodColor, colordown=badColor)
-
-            xfmt = mdates.DateFormatter('%a')
-            ax5.xaxis.set_major_formatter(xfmt)
-
-            # plot 6 ---------------------------------------------------------------------------------------
-            ax6 = plt.subplot2grid((rowNum,colNum),(8,2),rowspan=2,colspan=1,facecolor='w')
-            ax6.grid(False)
-            ax6.spines['bottom'].set_color(spineColor)
-            ax6.spines['top'].set_color(spineColor)
-            ax6.spines['left'].set_color(spineColor)
-            ax6.spines['right'].set_color(spineColor)
-
-            # plot 7 ---------------------------------------------------------------------------------------
-            ax7 = plt.subplot2grid((rowNum,colNum),(8,3),rowspan=2,colspan=1,facecolor='w')
-            ax7.grid(False)
-            ax7.spines['bottom'].set_color(spineColor)
-            ax7.spines['top'].set_color(spineColor)
-            ax7.spines['left'].set_color(spineColor)
-            ax7.spines['right'].set_color(spineColor)
-
-                # nothing here currently
+            # points ---------------------------------------------------------------------------------------
+            ax_description = plt.subplot2grid((rowNum,colNum),(15,2),rowspan=4,colspan=2)
+            ax_description.grid(False)
+            ax_description.get_xaxis().set_visible(False)
+            ax_description.get_yaxis().set_visible(False)
+            ax_description.spines['bottom'].set_color(spine_color)
+            ax_description.spines['top'].set_color(spine_color)
+            ax_description.spines['left'].set_color(spine_color)
+            ax_description.spines['right'].set_color(spine_color)
+            criteria_text = '\n'.join(['{}:'.format(x) for x in points])
+            points_text = '\n'.join(['{}'.format(points[x]) for x in points])
+            total_points = sum([points[x] for x in points])
+            ax_description.text(0.03, 0.9, 'Total points: {}'.format(total_points), horizontalalignment='left', verticalalignment='top')
+            ax_description.text(0.03, 0.7, criteria_text, horizontalalignment='left', verticalalignment='top')
+            ax_description.text(0.25, 0.7, points_text, horizontalalignment='left', verticalalignment='top')
 
 
             # finished creating plot -----------------------------------------------------------------------
@@ -604,7 +580,7 @@ class CapitVita(object):
     def derivative(self, signal):
         return np.gradient(signal)
 
-    def bbands(self, price, length=30, numsd=2):
+    def bbands(self, price, length=20, numsd=2):
         ave = price.rolling(window=length, center=False).mean()
         sd = price.rolling(window=length, center=False).std()
         upband = ave + (sd*numsd)
@@ -703,6 +679,7 @@ class CapitVita(object):
             ax.add_line(vline)
             ax.add_patch(rect)
         ax.autoscale_view()
+        ax.yaxis.tick_right()
 
         return lines, patches
 
@@ -744,8 +721,7 @@ class CapitVita(object):
             server.sendmail('takaomattpython@gmail.com', i, msg.as_string())
         server.quit()
 
-
-
-stock = 'cgnx'
+# for debugging
+stock = 'CMI'
 C = CapitVita()
 C.graph_data(stock)
