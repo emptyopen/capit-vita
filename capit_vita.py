@@ -37,9 +37,6 @@ from email.utils import COMMASPACE, formatdate
 TO DO
 
 update stocklist
-filter out already bought options
-show points in plot
-improve MACD plot? revamp point system and technical indicators
 look-back 3 years to see accuracy of RSI?
 https://www.investopedia.com/articles/active-trading/011815/top-technical-indicators-rookie-traders.asp
 auto sell architecture
@@ -66,6 +63,17 @@ class CapitVita(object):
         self.mailing_list = mailing_list
         self.debug = debug
         self.batchSize = 50
+
+        with open(self.par_path + '/auth/alphavantage.txt') as f:
+            self.av_API = f.read().split('\n')[0]
+
+        with open(os.pardir + '/auth/robinhood.txt') as f:
+            data = f.read().split('\n')
+            robinhood_username = data[0]
+            robinhood_password = data[1]
+        self.trader = Robinhood()
+        self.trader.login(username=robinhood_username, password=robinhood_password)
+
 
 ###########################################################################################################################################################
 ###      Find
@@ -103,9 +111,14 @@ class CapitVita(object):
                 stockset = list(f.read().split(','))
         if self.debug:
             stockset = stockset[:10]
-        lenStockset = len(stockset)
+        stockset_len = len(stockset)
 
-        print('Grabbing data for {} stocks...'.format(lenStockset))
+        # for now, ignore the last 20 trade-attempted stocks
+        ignore_these = [self.trader.get_url(x['instrument'])['symbol'] for x in self.trader.positions()['results'][-20:]]
+        stockset = [x for x in stockset if x not in ignore_these]
+
+
+        print('Grabbing data for {} stocks...'.format(stockset_len))
         stockPoints = {}
         for stock in stockset:
             try:
@@ -145,6 +158,7 @@ class CapitVita(object):
         print('Done!')
         return sortedStocks
 
+
 ###########################################################################################################################################################
 ###      Grab
 ###########################################################################################################################################################
@@ -154,11 +168,9 @@ class CapitVita(object):
 
         try:
 
-            with open(self.par_path + '/auth/alphavantage.txt') as f:
-            	myAPI = f.read().split('\n')[0]
             tries = 0
             while True:
-                url = 'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol={}&outputsize=full&apikey={}'.format(signal_name, myAPI)
+                url = 'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol={}&outputsize=full&apikey={}'.format(signal_name, self.av_API)
                 request = urllib2.Request(url, headers={'User-Agent' : "Magic Browser"})
                 temp = eval(urllib2.urlopen(request).read())
                 if 'Time Series (Daily)' in temp:
@@ -248,7 +260,7 @@ class CapitVita(object):
             macd_diff = macd_max - macd_min
             #print('max, min', macd_max, macd_min, macd_diff, self.df['MACD'].iloc[-1])
             #print('percentage', abs(self.df['MACD'].iloc[-1] / macd_diff))
-            points['macd'] = 40 * (1. - abs(self.df['MACD'].iloc[-1] / macd_diff))
+            points['macd'] = round(40 * (1. - abs(self.df['MACD'].iloc[-1] / macd_diff)))
             #points['macd'] = round(30 * self.df['MACD_norm'].iloc[-1] / max([abs(x) for x in self.df['MACD_norm']]))
             #points['macd2'] = round(15 * self.df['MACD_der'].iloc[-1] / max([abs(x) for x in self.df['MACD_der']]))
 
@@ -722,6 +734,9 @@ class CapitVita(object):
         server.quit()
 
 # for debugging
+'''
 stock = 'CMI'
 C = CapitVita()
-C.graph_data(stock)
+#C.graph_data(stock)
+C.find_stocks()
+'''
