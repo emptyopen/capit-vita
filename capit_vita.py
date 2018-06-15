@@ -103,7 +103,7 @@ class CapitVita(object):
         print('Fetching stock list...')
         if os.path.isfile(self.home_path + 'options_stocklist.txt'):
             print('  Using weekly :)')
-            with open(self.home_path+'20170718-options.txt', 'r') as f:
+            with open(self.home_path+'options_stocklist.txt', 'r') as f:
                 stockset = list(f.read().split(','))[:-2]
         else:
             print('  Using all :(')
