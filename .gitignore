@@ -1,6 +1,6 @@
 *.pyc
 .DS_Store
-data/*
+data/*.png
 temp/*
 crypto-data/*.png
 env/
