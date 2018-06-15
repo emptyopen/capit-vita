@@ -3,3 +3,4 @@
 data/*.png
 temp/*
 crypto-data/*.png
+env/
