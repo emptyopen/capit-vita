@@ -7,7 +7,7 @@ import urllib
 class Robinhood:
 
     endpoints = {
-            "login": "https://api.robinhood.com/api-token-auth/",
+            "login": "https://api.robinhood.com/oauth2/token/",
             "investment_profile": "https://api.robinhood.com/user/investment_profile/",
             "accounts":"https://api.robinhood.com/accounts/",
             "ach_iav_auth":"https://api.robinhood.com/ach/iav/auth/",
@@ -70,29 +70,36 @@ class Robinhood:
     def login(self, username, password):
         self.username = username
         self.password = password
-        data = urllib.urlencode({"password" : self.password, "username" : self.username})
+        client_id = "c82SH0WZOsabOXGP2sxqcj34FxkvfnWRZBKlBjFS"
+        data = urllib.urlencode({"password" : self.password, "username" : self.username, 'grant_type': 'password', 'client_id': client_id})
         res = self.session.post(self.endpoints['login'], data=data)
         res = res.json()
         try:
-            self.auth_token = res['token']
+            self.auth_token = res['access_token']
         except KeyError:
             return False
-        self.headers['Authorization'] = 'Token '+self.auth_token
+        self.headers['Authorization'] = 'Bearer ' + self.auth_token
         return True
 
     ##############################
     #GET DATA
     ##############################
 
-    def get_url(self, url):
-        return self.session.get(url).json()
+    def investment_profile(self):
+        self.session.get(self.endpoints['investment_profile'])
+
+    def get_API_summary(self):
+        res = self.session.get("https://api.robinhood.com/")
+        res = res.json()
+        return res
 
     def investment_profile(self):
-        return self.session.get(self.endpoints['investment_profile'])
+        res = self.session.get(self.endpoints['investment_profile'])
+        res = res.json()
+        return res
 
     def instruments(self, stock=None):
-        res = self.session.get(self.endpoints['instruments'], params={'query':stock})
-        #res = self.session.get(self.endpoints['instruments'], params={'query':stock.upper()})
+        res = self.session.get(self.endpoints['instruments'], params={'query':stock.upper()})
         res = res.json()
         return res['results']
 
