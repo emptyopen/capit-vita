@@ -67,7 +67,7 @@ class CapitVita(object):
         with open(self.par_path + '/auth/alphavantage.txt') as f:
             self.av_API = f.read().split('\n')[0]
 
-        with open(os.pardir + '/auth/robinhood.txt') as f:
+        with open(self.par_path + '/auth/robinhood.txt') as f:
             data = f.read().split('\n')
             robinhood_username = data[0]
             robinhood_password = data[1]
