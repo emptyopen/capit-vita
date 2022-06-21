@@ -13,7 +13,7 @@ kiwisolver==1.0.1
 matplotlib==2.2.2
 more-itertools==4.1.0
 ndg-httpsclient==0.4.4
-numpy==1.14.2
+numpy==1.22.0
 pandas==0.22.0
 pyasn1==0.4.2
 pycparser==2.18
